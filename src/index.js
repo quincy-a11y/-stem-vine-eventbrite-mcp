@@ -53,10 +53,21 @@ function createServer(env) {
 
 export default {
   fetch(request, env, ctx) {
-    const authorization = request.headers.get("Authorization");
-    const expected = `Bearer ${env.MCP_API_KEY}`;
+    const url = new URL(request.url);
 
-    if (!env.MCP_API_KEY || authorization !== expected) {
+    // Standard Bearer authentication
+    const authorization = request.headers.get("Authorization");
+    const bearerAuthorized =
+      env.MCP_API_KEY &&
+      authorization === `Bearer ${env.MCP_API_KEY}`;
+
+    // Private URL authentication for ChatGPT's No Auth connection
+    const privatePath = `/mcp/${env.MCP_API_KEY}`;
+    const pathAuthorized =
+      env.MCP_API_KEY &&
+      url.pathname === privatePath;
+
+    if (!bearerAuthorized && !pathAuthorized) {
       return new Response("Unauthorized", {
         status: 401,
         headers: {
@@ -65,6 +76,21 @@ export default {
       });
     }
 
-    return createMcpHandler(() => createServer(env))(request, env, ctx);
+    // The MCP handler expects /mcp, so privately authenticated
+    // requests are internally rewritten to /mcp.
+    let handlerRequest = request;
+
+    if (pathAuthorized) {
+      const rewrittenUrl = new URL(request.url);
+      rewrittenUrl.pathname = "/mcp";
+
+      handlerRequest = new Request(rewrittenUrl.toString(), request);
+    }
+
+    return createMcpHandler(() => createServer(env))(
+      handlerRequest,
+      env,
+      ctx
+    );
   },
 };
