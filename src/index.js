@@ -1,6 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
-import { z } from "zod";
 
 function createServer(env) {
   const server = new McpServer({
@@ -26,10 +25,12 @@ function createServer(env) {
 
       if (!response.ok) {
         return {
-          content: [{
-            type: "text",
-            text: `Eventbrite returned HTTP ${response.status}`,
-          }],
+          content: [
+            {
+              type: "text",
+              text: `Eventbrite returned HTTP ${response.status}`,
+            },
+          ],
           isError: true,
         };
       }
@@ -37,10 +38,12 @@ function createServer(env) {
       const data = await response.json();
 
       return {
-        content: [{
-          type: "text",
-          text: JSON.stringify(data, null, 2),
-        }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(data, null, 2),
+          },
+        ],
       };
     }
   );
@@ -50,6 +53,18 @@ function createServer(env) {
 
 export default {
   fetch(request, env, ctx) {
+    const authorization = request.headers.get("Authorization");
+    const expected = `Bearer ${env.MCP_API_KEY}`;
+
+    if (!env.MCP_API_KEY || authorization !== expected) {
+      return new Response("Unauthorized", {
+        status: 401,
+        headers: {
+          "WWW-Authenticate": "Bearer",
+        },
+      });
+    }
+
     return createMcpHandler(() => createServer(env))(request, env, ctx);
   },
 };
