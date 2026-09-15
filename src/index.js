@@ -1,235 +1,57 @@
-import { McpServer } from "@modelcontextprotocol/server";
-import { createMcpHandler } from "agents/mcp/server";
-import { z } from "zod";
+Here is the handoff from my newer conversation about the Stem & Vine Eventbrite integration:
 
-const EVENTBRITE_BASE = "https://www.eventbriteapi.com/v3";
-const ORGANIZATION_ID = "2264001212583";
+We confirmed that the custom app is connected to the correct Eventbrite organization:
 
-async function eventbrite(env, path) {
-  const response = await fetch(`${EVENTBRITE_BASE}${path}`, {
-    headers: {
-      Authorization: `Bearer ${env.EVENTBRITE_TOKEN}`,
-    },
-  });
+* App: Stem & Vine Eventbrite
+* Development app ID: dev-6aa96472c46081919300cc14e54aec88
+* Eventbrite organization: Stem & Vine Baltimore
+* Organization ID: 2264001212583
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `Eventbrite HTTP ${response.status}: ${body.slice(0, 500)}`
-    );
-  }
+The connection works, but the MCP server currently gives ChatGPT only one tool: `eventbrite_connection_test`. That tool confirms the account but does not retrieve or manage events.
 
-  return response.json();
-}
+Because there was no account-specific event-listing tool, ChatGPT incorrectly used public Eventbrite search results. This mixed events merely held at Stem & Vine with events actually published by Stem & Vine. Do not use geographic, venue, or public search results as a substitute.
 
-function result(data) {
-  return {
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify(data, null, 2),
-      },
-    ],
-  };
-}
+The connector needs full read-and-write capabilities.
 
-function createServer(env) {
-  const server = new McpServer({
-    name: "Stem & Vine Eventbrite",
-    version: "1.1.0",
-  });
+Required read tools:
 
-  // 1. Test connection
-  server.registerTool(
-    "eventbrite_connection_test",
-    {
-      description:
-        "Test Stem & Vine's Eventbrite connection and return the Eventbrite organization.",
-      inputSchema: {},
-    },
-    async () => {
-      try {
-        const data = await eventbrite(
-          env,
-          "/users/me/organizations/"
-        );
-        return result(data);
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: error.message }],
-          isError: true,
-        };
-      }
-    }
-  );
+* List Stem & Vine’s upcoming, past, draft, and canceled events
+* Get a specific event
+* List ticket types, prices, inventory, and sales
+* List orders and registrations
+* List attendees and check-in status
+* Read venue, schedule, capacity, and event status
 
-  // 2. List Stem & Vine events
-  server.registerTool(
-    "list_events",
-    {
-      description:
-        "List Stem & Vine Eventbrite events, including upcoming, live, draft, completed, and other events returned by Eventbrite.",
-      inputSchema: {},
-    },
-    async () => {
-      try {
-        const data = await eventbrite(
-          env,
-          `/organizations/${ORGANIZATION_ID}/events/?page_size=50`
-        );
-        return result(data);
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: error.message }],
-          isError: true,
-        };
-      }
-    }
-  );
+Required write tools:
 
-  // 3. Get one event
-  server.registerTool(
-    "get_event",
-    {
-      description:
-        "Get detailed Eventbrite information for one Stem & Vine event using its Eventbrite event ID.",
-      inputSchema: {
-        event_id: z.string().describe("The Eventbrite event ID"),
-      },
-    },
-    async ({ event_id }) => {
-      try {
-        const data = await eventbrite(
-          env,
-          `/events/${encodeURIComponent(event_id)}/?expand=venue,ticket_classes`
-        );
-        return result(data);
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: error.message }],
-          isError: true,
-        };
-      }
-    }
-  );
+* Create a draft event
+* Update an event
+* Create and update ticket types
+* Update ticket quantity, price, and sale dates
+* Publish an event
+* Unpublish an event
+* Check attendees in or out
+* Delete or cancel an event
 
-  // 4. Get attendees
-  server.registerTool(
-    "get_event_attendees",
-    {
-      description:
-        "Get the attendee list and registration information for a Stem & Vine Eventbrite event.",
-      inputSchema: {
-        event_id: z.string().describe("The Eventbrite event ID"),
-      },
-    },
-    async ({ event_id }) => {
-      try {
-        const data = await eventbrite(
-          env,
-          `/events/${encodeURIComponent(event_id)}/attendees/?page_size=50`
-        );
-        return result(data);
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: error.message }],
-          isError: true,
-        };
-      }
-    }
-  );
+Important safeguards:
 
-  // 5. Get orders
-  server.registerTool(
-    "get_event_orders",
-    {
-      description:
-        "Get Eventbrite orders for a Stem & Vine event, including order and purchaser information available from Eventbrite.",
-      inputSchema: {
-        event_id: z.string().describe("The Eventbrite event ID"),
-      },
-    },
-    async ({ event_id }) => {
-      try {
-        const data = await eventbrite(
-          env,
-          `/events/${encodeURIComponent(event_id)}/orders/?page_size=50`
-        );
-        return result(data);
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: error.message }],
-          isError: true,
-        };
-      }
-    }
-  );
+* Hard-code organization ID `2264001212583`.
+* Only retrieve events owned by that organization.
+* Never use Eventbrite’s nearby-event or location search.
+* Create new events as drafts first.
+* Show me a preview before making changes.
+* Require confirmation before publishing, unpublishing, deleting, canceling, checking attendees in, or changing ticket inventory.
+* Keep all Eventbrite credentials on the server.
+* Display times in Eastern Time.
+* Handle pagination so no events or attendees are missed.
 
-  // 6. Get ticket classes
-  server.registerTool(
-    "get_ticket_classes",
-    {
-      description:
-        "Get ticket types, prices, quantities, and ticket availability for a Stem & Vine Eventbrite event.",
-      inputSchema: {
-        event_id: z.string().describe("The Eventbrite event ID"),
-      },
-    },
-    async ({ event_id }) => {
-      try {
-        const data = await eventbrite(
-          env,
-          `/events/${encodeURIComponent(event_id)}/ticket_classes/`
-        );
-        return result(data);
-      } catch (error) {
-        return {
-          content: [{ type: "text", text: error.message }],
-          isError: true,
-        };
-      }
-    }
-  );
+The custom app was created through ChatGPT Developer Mode. It should be located under:
 
-  return server;
-}
+* Settings → Apps → Enabled Apps → Stem & Vine Eventbrite, or
+* Workspace Settings → Apps → Drafts → Stem & Vine Eventbrite
 
-export default {
-  fetch(request, env, ctx) {
-    const url = new URL(request.url);
+It will have a “Dev” label.
 
-    const authorization = request.headers.get("Authorization");
-    const bearerAuthorized =
-      env.MCP_API_KEY &&
-      authorization === `Bearer ${env.MCP_API_KEY}`;
+The missing work must be completed on the remote MCP server whose address was entered when the custom app was created. After updating that server, ChatGPT must scan or refresh the tools so the new read/write actions appear.
 
-    const privatePath = `/mcp/${env.MCP_API_KEY}`;
-    const pathAuthorized =
-      env.MCP_API_KEY &&
-      url.pathname === privatePath;
-
-    if (!bearerAuthorized && !pathAuthorized) {
-      return new Response("Unauthorized", {
-        status: 401,
-        headers: {
-          "WWW-Authenticate": "Bearer",
-        },
-      });
-    }
-
-    let handlerRequest = request;
-
-    if (pathAuthorized) {
-      const rewrittenUrl = new URL(request.url);
-      rewrittenUrl.pathname = "/mcp";
-
-      handlerRequest = new Request(rewrittenUrl.toString(), request);
-    }
-
-    return createMcpHandler(() => createServer(env))(
-      handlerRequest,
-      env,
-      ctx
-    );
-  },
-};
+Please continue from where we originally built the MCP server. Identify the hosting platform, project, files, and server address we previously used, then help me add the tools above. Do not ask me to remember or reconstruct steps already completed in this original conversation.
